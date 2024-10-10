@@ -1,0 +1,78 @@
+import numpy as np
+import pandas as pd
+import scipy.signal as signal
+import matplotlib.pyplot as plt
+# Read the CSV file
+csv_file = 'PPG_DATADATA - PPG_DATADATA.csv'
+data = pd.read_csv(csv_file)
+# Extract the relevant columns
+t = data['Time'].values
+abdomen_ppg = data['Abdomen_PPG'].values
+reference_ppg = data['Reference_PPG'].values
+# Ensure all arrays have the same length
+min_length = min(len(t), len(abdomen_ppg), len(reference_ppg))
+t = t[:min_length]
+abdomen_ppg = abdomen_ppg[:min_length]
+reference_ppg = reference_ppg[:min_length]
+# Calculate the sampling frequency
+fs = 1 / np.mean(np.diff(t)) # Sampling frequency in Hz
+# Step 3: Filter the primary signal
+b, a = signal.butter(3, [0.5, 3.0], btype='band', fs=fs)
+filtered_combined_ppg = signal.filtfilt(b, a, abdomen_ppg)
+# Step 4: Multiply the filtered primary signal by the reference signal
+multiplied_signal = filtered_combined_ppg * reference_ppg
+# Step 5: Apply a low-pass filter with a cutoff frequency of 15 Hz
+b, a = signal.butter(3, 15, btype='low', fs=fs)
+low_passed_signal = signal.filtfilt(b, a, multiplied_signal)
+# Step 6: Adaptive filter (LMS filter example)
+def lms_filter(d, x, mu, order):
+ n = len(x)
+ y = np.zeros(n)
+ e = np.zeros(n)
+ w = np.zeros(order)
+ for i in range(order, n):
+ x_vec = x[i-order:i]
+ y[i] = np.dot(w, x_vec)
+ e[i] = d[i] - y[i]
+ w += 2 * mu * e[i] * x_vec
+ return y, e
+mu = 0.01 # Step size for the LMS filter
+order = 4 # Order of the filter
+filtered_signal, error_signal = lms_filter(low_passed_signal, reference_ppg, mu, order)
+# Peak detection in the extracted fetal heart rate signal
+peaks, _ = signal.find_peaks(error_signal, distance=fs/3) # Assuming a minimum heart rate of 20 
+BPM
+# Calculate BPM
+peak_intervals = np.diff(peaks) / fs # Intervals in seconds
+bpm = 60 / peak_intervals # Convert intervals to BPM
+# Plot the signals and BPM
+plt.figure(figsize=(12, 10))
+plt.subplot(4, 1, 1)
+plt.plot(t, reference_ppg, label='Reference PPG Signal')
+plt.title('Reference PPG Signal')
+plt.legend()
+plt.subplot(4, 1, 2)
+plt.plot(t, combined_ppg_noisy, label='Combined PPG Signal')
+plt.title('Combined PPG Signal')
+plt.legend()
+plt.subplot(4, 1, 3)
+plt.plot(t, low_passed_signal, label='Low-passed Signal')
+plt.title('Low-passed Signal')
+plt.legend()
+plt.subplot(4, 1, 4)
+plt.plot(t, error_signal, label='Extracted Fetal Heart Rate Signal')
+plt.plot(t[peaks], error_signal[peaks], 'ro', label='Detected Peaks')
+plt.title('Extracted Fetal Heart Rate Signal')
+plt.legend()
+plt.tight_layout()
+plt.show()
+# Plot BPM
+plt.figure(figsize=(12, 4))
+plt.plot(peaks[1:] / fs, bpm, 'b-', marker='o', label='Fetal Heart Rate (BPM)')
+plt.title('Fetal Heart Rate (BPM)')
+plt.xlabel('Time (s)')
+plt.ylabel('BPM')
+plt.legend()
+plt.grid(True)
+plt.show()
+print(bpm)
